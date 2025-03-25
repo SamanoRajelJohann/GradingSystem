@@ -290,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
       <!-- Right Side (User Info + Logout) -->
       <div class="d-flex align-items-center ms-auto">
-        <span class="user-info">Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?> | Role: <?php echo htmlspecialchars($_SESSION['role']); ?></span>
+        <span class="user-info">Welcome: <?php echo htmlspecialchars($_SESSION['name']); ?> | Role: <?php echo htmlspecialchars($_SESSION['role']); ?></span>
         <button onclick="confirmLogout()" class="logout-btn btn btn-link ms-3">Logout</button>
       </div>
     </div>

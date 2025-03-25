@@ -72,7 +72,7 @@ if (isset($_POST['signin'])) {
             $_SESSION['logged_in'] = true;
 
             // Redirect based on role
-            if (strtolower($role) === 'admin') {
+            if (strtolower($role) === 'admin' or strtolower($role) === 'faculty') {
                 header("Location: adminhome.php");
             } elseif (strtolower($role) === 'user') {
                 header("Location: userhome.php");

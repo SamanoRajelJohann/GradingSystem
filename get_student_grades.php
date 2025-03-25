@@ -5,7 +5,7 @@ if (isset($_GET['student_id'])) {
     $student_id = intval($_GET['student_id']);
     
     $query = "SELECT g.Prelim, g.Midterm, g.Final, g.GWA, g.EQ, g.Remarks,
-                     c.CourseIDnumber, c.CourseName
+                     c.CourseIDnumber, c.CourseName, g.SchoolYear
               FROM grades g
               JOIN course c ON g.CourseID = c.CourseID
               WHERE g.StudentID = ?

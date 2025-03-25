@@ -144,7 +144,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 
             <!-- Right Side (User Info + Logout) -->
             <div class="d-flex align-items-center ms-auto">
-                <span class="user-info">Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?> | Role: <?php echo htmlspecialchars($_SESSION['role']); ?></span>
+                <span class="user-info">Welcome: <?php echo htmlspecialchars($_SESSION['name']); ?> | Role: <?php echo htmlspecialchars($_SESSION['role']); ?></span>
                 <button onclick="confirmLogout()" class="logout-btn btn btn-link ms-3">Logout</button>
             </div>
         </div>
@@ -232,6 +232,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
                                     <th>GWA</th>
                                     <th>EQ</th>
                                     <th>Remarks</th>
+                                    <th>School Year</th>
                                 </tr>
                             </thead>
                             <tbody>`;
@@ -246,6 +247,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
                                 <td>${grade.GWA}</td>
                                 <td>${grade.EQ}</td>
                                 <td>${grade.Remarks}</td>
+                                <td>${grade.SchoolYear}</td>
                             </tr>`;
                     });
                     

@@ -1,6 +1,6 @@
 <?php
 // Include the database connection file
-require_once("db.php");
+require_once "db.php";
 
 // Start the session
 session_start();
@@ -12,6 +12,74 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     exit();
 }
 
+// Add deadline constants at the top of the file
+const PRELIM_DEADLINE = '2025-03-31';
+const MIDTERM_DEADLINE = '2025-04-12';
+const FINAL_DEADLINE = '2025-06-10';
+
+// Function to check if a grade can be modified based on date
+function canModifyGrade($gradeType) {
+    return true; // Always allow modification if not recorded
+}
+
+// Function to get grade status
+function getGradeStatus($gradeType) {
+    $current_date = date('Y-m-d');
+    $deadline = match($gradeType) {
+        'prelim' => PRELIM_DEADLINE,
+        'midterm' => MIDTERM_DEADLINE,
+        'final' => FINAL_DEADLINE,
+        default => null
+    };
+    
+    if ($deadline === null) {
+        return 'closed';
+    }
+    
+    // Convert dates to timestamps for comparison
+    $current_timestamp = strtotime($current_date);
+    $deadline_timestamp = strtotime($deadline);
+    
+    // Return 'open' if current date is before or equal to deadline
+    return $current_timestamp <= $deadline_timestamp ? 'open' : 'closed';
+}
+
+// Add deadline update logic
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_deadlines') {
+    $prelim_deadline = $_POST['prelim_deadline'];
+    $midterm_deadline = $_POST['midterm_deadline'];
+    $final_deadline = $_POST['final_deadline'];
+    
+    // Update the deadline constants in the file
+    $file_content = file_get_contents(__FILE__);
+    
+    // Replace the deadline constants with new values
+    $file_content = preg_replace(
+        "/const PRELIM_DEADLINE = '.*?';/",
+        "const PRELIM_DEADLINE = '$prelim_deadline';",
+        $file_content
+    );
+    $file_content = preg_replace(
+        "/const MIDTERM_DEADLINE = '.*?';/",
+        "const MIDTERM_DEADLINE = '$midterm_deadline';",
+        $file_content
+    );
+    $file_content = preg_replace(
+        "/const FINAL_DEADLINE = '.*?';/",
+        "const FINAL_DEADLINE = '$final_deadline';",
+        $file_content
+    );
+    
+    // Write the updated content back to the file
+    if (file_put_contents(__FILE__, $file_content)) {
+        echo "<script>alert('Deadlines updated successfully!');</script>";
+        echo "<script>window.location.href='admingrades.php';</script>";
+    } else {
+        echo "<script>alert('Error updating deadlines. Please check file permissions.');</script>";
+    }
+    exit();
+}
+
 // Add new grade logic
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
     $student_id = (int)$_POST['student_id'];
@@ -19,103 +87,59 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $prelim = floatval($_POST['prelim']);
     $midterm = floatval($_POST['midterm']);
     $final = floatval($_POST['final']);
+    $current_date = date('Y-m-d');
     
-    // Calculate GWA
-    $gwa = $prelim * 0.3 + $midterm * 0.3 + $final * 0.4;
+    // Calculate school year automatically
+    $current_month = (int)date('n'); // Get current month (1-12)
+    $current_year = (int)date('Y'); // Get current year
     
-    // Adjust the semester grade based on the cutoff rule
-    if ($gwa < 71.50) {
-        $gwa = 70.00; // Dropped
-    } else if ($gwa < 74.50) {
-        $gwa = 74.00; // Failed
-    }
-
-    // Assign Grade Point Description (EQ)
-    if ($gwa >= 97.50) {
-        $eq = "1.00";
-    } else if ($gwa >= 94.50) {
-        $eq = "1.25";
-    } else if ($gwa >= 91.50) {
-        $eq = "1.50";
-    } else if ($gwa >= 88.50) {
-        $eq = "1.75";
-    } else if ($gwa >= 85.50) {
-        $eq = "2.00";
-    } else if ($gwa >= 82.50) {
-        $eq = "2.25";
-    } else if ($gwa >= 79.50) {
-        $eq = "2.50";
-    } else if ($gwa >= 76.50) {
-        $eq = "2.75";
-    } else if ($gwa >= 74.50) {
-        $eq = "3.00";
-    } else {
-        $eq = "5.00"; // Failed/Dropped
-    }
-
-    // Determine remarks based on GWA
-    if ($gwa < 71.50) {
-        $remarks = "Dropped";
-    } else if ($gwa < 74.50) {
-        $remarks = "Failed";
-    } else {
-        $remarks = "Passed";
-    }
-
-    // First check if student is enrolled in the course
-    $check_sql = "SELECT * FROM student_course WHERE StudentID = ? AND CourseID = ?";
+    // If current month is before June (6), use previous year as start year
+    // If current month is June or later, use current year as start year
+    $start_year = $current_month < 6 ? $current_year - 1 : $current_year;
+    $school_year = $start_year . '-' . ($start_year + 1);
+    
+    // Check if grade record exists
+    $check_sql = "SELECT * FROM grades WHERE StudentID = ? AND CourseID = ? AND SchoolYear = ?";
     $check_stmt = $mysqli->prepare($check_sql);
-    $check_stmt->bind_param("ii", $student_id, $course_id);
+    $check_stmt->bind_param("iis", $student_id, $course_id, $school_year);
     $check_stmt->execute();
     $result = $check_stmt->get_result();
-
-    if ($result->num_rows === 0) {
-        // If not enrolled, first enroll the student
-        $enroll_sql = "INSERT INTO student_course (StudentID, CourseID) VALUES (?, ?)";
-        $enroll_stmt = $mysqli->prepare($enroll_sql);
-        $enroll_stmt->bind_param("ii", $student_id, $course_id);
-        $enroll_stmt->execute();
-        $enroll_stmt->close();
-    }
-
-    // Insert grade
-    $sql = "INSERT INTO grades (StudentID, CourseID, Prelim, Midterm, Final, GWA, EQ, Remarks) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     
-    $stmt = $mysqli->prepare($sql);
-    if (!$stmt) {
-        echo "<script>alert('Prepare failed: " . $mysqli->error . "');</script>";
-        exit();
-    }
-    
-    // Debug output
-    error_log("Binding parameters: student_id=" . $student_id . ", course_id=" . $course_id . 
-              ", prelim=" . $prelim . ", midterm=" . $midterm . ", final=" . $final . 
-              ", gwa=" . $gwa . ", eq=" . $eq . ", remarks=" . $remarks);
-    
-    $stmt->bind_param("iidddsss", $student_id, $course_id, $prelim, $midterm, $final, $gwa, $eq, $remarks);
-    
-    if ($stmt->execute()) {
-        echo "<script>alert('New grade added successfully!');</script>";
-        echo "<script>window.location.href='admingrades.php';</script>";
-    } else {
-        echo "<script>alert('Error: " . $mysqli->error . "');</script>";
-    }
-    $stmt->close();
-}
-
-// Edit grade logic
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit') {
-    if (isset($_POST['grades_id'])) {
-        $grades_id = intval($_POST['grades_id']);
-        $prelim = floatval($_POST['prelim']);
-        $midterm = floatval($_POST['midterm']);
-        $final = floatval($_POST['final']);
+    if ($result->num_rows > 0) {
+        // Update existing record
+        $update_sql = "UPDATE grades SET 
+                      Prelim = ?, 
+                      Midterm = ?, 
+                      Final = ?,
+                      PrelimDate = CASE WHEN ? > 0 THEN COALESCE(PrelimDate, ?) ELSE PrelimDate END,
+                      MidtermDate = CASE WHEN ? > 0 THEN COALESCE(MidtermDate, ?) ELSE MidtermDate END,
+                      FinalDate = CASE WHEN ? > 0 THEN COALESCE(FinalDate, ?) ELSE FinalDate END
+                      WHERE StudentID = ? AND CourseID = ? AND SchoolYear = ?";
         
-        // Calculate GWA
+        $update_stmt = $mysqli->prepare($update_sql);
+        $update_stmt->bind_param("ddddddddiis", 
+            $prelim, $midterm, $final,
+            $prelim, $current_date,
+            $midterm, $current_date,
+            $final, $current_date,
+            $student_id, $course_id, $school_year);
+            
+        if ($update_stmt->execute()) {
+            echo "<script>alert('Grades updated successfully!');</script>";
+            echo "<script>window.location.href='admingrades.php';</script>";
+        } else {
+            echo "<script>alert('Error updating grades: " . $update_stmt->error . "');</script>";
+        }
+        $update_stmt->close();
+    } else {
+        // Insert new record
+        $sql = "INSERT INTO grades (StudentID, CourseID, Prelim, Midterm, Final, GWA, EQ, Remarks,
+                                  PrelimDate, MidtermDate, FinalDate, SchoolYear) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        // Calculate GWA and other values
         $gwa = $prelim * 0.3 + $midterm * 0.3 + $final * 0.4;
         
-        // Apply cutoff rules
         if ($gwa < 71.50) {
             $gwa = 70.00;
             $remarks = "Dropped";
@@ -137,48 +161,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         else if ($gwa >= 76.50) $eq = "2.75";
         else if ($gwa >= 74.50) $eq = "3.00";
         else $eq = "5.00";
-
-        // Get current values
-        $check_query = "SELECT Prelim, Midterm, Final, GWA, EQ, Remarks FROM grades WHERE GradesID = ?";
-        $check_stmt = $mysqli->prepare($check_query);
-        $check_stmt->bind_param("i", $grades_id);
-        $check_stmt->execute();
-        $result = $check_stmt->get_result();
-        $current_values = $result->fetch_assoc();
-        $check_stmt->close();
-
-        // Check if there are actual changes
-        $has_changes = false;
-        if ($current_values['Prelim'] != $prelim ||
-            $current_values['Midterm'] != $midterm ||
-            $current_values['Final'] != $final ||
-            $current_values['GWA'] != $gwa ||
-            $current_values['EQ'] != $eq ||
-            $current_values['Remarks'] != $remarks) {
-            $has_changes = true;
-        }
-
-        if ($has_changes) {
-            // Update the grades
-            $update_query = "UPDATE grades SET Prelim = ?, Midterm = ?, Final = ?, GWA = ?, EQ = ?, Remarks = ? WHERE GradesID = ?";
-            $update_stmt = $mysqli->prepare($update_query);
-            $update_stmt->bind_param("ddddssi", $prelim, $midterm, $final, $gwa, $eq, $remarks, $grades_id);
+        
+        $stmt = $mysqli->prepare($sql);
+        
+        // Prepare the date values
+        $prelim_date = $prelim > 0 ? $current_date : null;
+        $midterm_date = $midterm > 0 ? $current_date : null;
+        $final_date = $final > 0 ? $current_date : null;
+        
+        $stmt->bind_param("iidddsssssss", 
+            $student_id, $course_id,
+            $prelim, $midterm, $final,
+            $gwa, $eq, $remarks,
+            $prelim_date, $midterm_date, $final_date,
+            $school_year);
             
-            if ($update_stmt->execute()) {
-                echo "<script>
-                    alert('Grade updated successfully!');
-                    window.location.href = 'admingrades.php';
-                </script>";
-            } else {
-                echo "<script>
-                    alert('Error updating grade: " . $update_stmt->error . "');
-                </script>";
-            }
-            $update_stmt->close();
+        if ($stmt->execute()) {
+            echo "<script>alert('New grade added successfully!');</script>";
+            echo "<script>window.location.href='admingrades.php';</script>";
         } else {
-            // No changes were made, just redirect without message
-            echo "<script>window.location.href = 'admingrades.php';</script>";
+            echo "<script>alert('Error: " . $mysqli->error . "');</script>";
         }
+        $stmt->close();
+    }
+}
+
+// Initialize grade_dates array with null values
+$grade_dates = [
+    'PrelimDate' => null,
+    'MidtermDate' => null,
+    'FinalDate' => null
+];
+
+// Edit grade logic
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit') {
+    if (isset($_POST['grades_id'])) {
+        $grades_id = intval($_POST['grades_id']);
+        
+        // Fetch existing grade dates
+        $fetch_sql = "SELECT PrelimDate, MidtermDate, FinalDate FROM grades WHERE GradesID = ?";
+        $fetch_stmt = $mysqli->prepare($fetch_sql);
+        $fetch_stmt->bind_param("i", $grades_id);
+        $fetch_stmt->execute();
+        $grade_dates = $fetch_stmt->get_result()->fetch_assoc();
+        $fetch_stmt->close();
+        
+        $prelim = floatval($_POST['prelim']);
+        $midterm = floatval($_POST['midterm']);
+        $final = floatval($_POST['final']);
+        $current_date = date('Y-m-d');
+        
+        // Check each grade independently
+        if ($prelim > 0 && !canModifyGrade('prelim')) {
+            echo "<script>alert('Prelim grade entry is closed.');
+            window.location.href='admingrades.php';</script>";
+            exit();
+        }
+        if ($midterm > 0 && !canModifyGrade('midterm')) {
+            echo "<script>alert('Midterm grade entry is closed.');
+            window.location.href='admingrades.php';</script>";
+            exit();
+        }
+        if ($final > 0 && !canModifyGrade('final')) {
+            echo "<script>alert('Final grade entry is closed.');
+            window.location.href='admingrades.php';</script>";
+            exit();
+        }
+        
+        // Calculate new values
+        $gwa = $prelim * 0.3 + $midterm * 0.3 + $final * 0.4;
+        
+        if ($gwa < 71.50) {
+            $gwa = 70.00;
+            $remarks = "Dropped";
+        } else if ($gwa < 74.50) {
+            $gwa = 74.00;
+            $remarks = "Failed";
+        } else {
+            $remarks = "Passed";
+        }
+        
+        // Calculate EQ
+        if ($gwa >= 97.50) $eq = "1.00";
+        else if ($gwa >= 94.50) $eq = "1.25";
+        else if ($gwa >= 91.50) $eq = "1.50";
+        else if ($gwa >= 88.50) $eq = "1.75";
+        else if ($gwa >= 85.50) $eq = "2.00";
+        else if ($gwa >= 82.50) $eq = "2.25";
+        else if ($gwa >= 79.50) $eq = "2.50";
+        else if ($gwa >= 76.50) $eq = "2.75";
+        else if ($gwa >= 74.50) $eq = "3.00";
+        else $eq = "5.00";
+        
+        // Update the grades
+        $update_query = "UPDATE grades SET 
+                        Prelim = ?, 
+                        Midterm = ?, 
+                        Final = ?, 
+                        GWA = ?, 
+                        EQ = ?, 
+                        Remarks = ?,
+                        PrelimDate = CASE WHEN ? > 0 THEN COALESCE(PrelimDate, ?) ELSE PrelimDate END,
+                        MidtermDate = CASE WHEN ? > 0 THEN COALESCE(MidtermDate, ?) ELSE MidtermDate END,
+                        FinalDate = CASE WHEN ? > 0 THEN COALESCE(FinalDate, ?) ELSE FinalDate END
+                        WHERE GradesID = ?";
+        
+        $update_stmt = $mysqli->prepare($update_query);
+        $update_stmt->bind_param("ddddssddddddi", 
+            $prelim, $midterm, $final, $gwa, $eq, $remarks,
+            $prelim, $current_date,
+            $midterm, $current_date,
+            $final, $current_date,
+            $grades_id);
+        
+        if ($update_stmt->execute()) {
+            echo "<script>
+                alert('Grade updated successfully!');
+                window.location.href = 'admingrades.php';
+            </script>";
+        } else {
+            echo "<script>
+                alert('Error updating grade: " . $update_stmt->error . "');
+                window.location.href = 'admingrades.php';   
+            </script>";
+        }
+        $update_stmt->close();
     }
 }
 
@@ -186,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
     if (isset($_POST['grades_id'])) {
         $grades_id = intval($_POST['grades_id']);
-        
+            
         // First, insert into deleted_grades table
         $insert_sql = "INSERT INTO deleted_grades (GradesID, StudentID, CourseID, Prelim, Midterm, Final, GWA, EQ, Remarks)
                       SELECT GradesID, StudentID, CourseID, Prelim, Midterm, Final, GWA, EQ, Remarks
@@ -422,7 +529,7 @@ function getCourseList($mysqli) {
 
       <!-- Right Side (User Info + Logout) -->
       <div class="d-flex align-items-center ms-auto">
-        <span class="user-info">Welcome, <?php echo htmlspecialchars($_SESSION['name']); ?> | Role: <?php echo htmlspecialchars($_SESSION['role']); ?></span>
+        <span class="user-info"> Welcome: <?php echo htmlspecialchars($_SESSION['name']); ?> | Role: <?php echo htmlspecialchars($_SESSION['role']); ?></span>
         <button onclick="confirmLogout()" class="logout-btn btn btn-link ms-3">Logout</button>
       </div>
     </div>
@@ -430,9 +537,14 @@ function getCourseList($mysqli) {
     
   <!-- Button to trigger modal -->
   <div class="container mt-4">
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" style="width:175px;" data-bs-target="#addGradeModal">
-      Add New Grade
-    </button>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <button type="button" class="btn btn-primary" data-bs-toggle="modal" style="width:175px;" data-bs-target="#addGradeModal">
+        Add New Grade
+      </button>
+      <button type="button" class="btn btn-warning" data-bs-toggle="modal" style="width:175px;" data-bs-target="#deadlineModal">
+        Manage Deadlines
+      </button>
+    </div>
 
     <!--ADD Modal -->
 <div class="modal fade" id="addGradeModal" tabindex="-1" aria-labelledby="addGradeLabel" aria-hidden="true">
@@ -507,6 +619,39 @@ function getCourseList($mysqli) {
   </div>
 </div>
 
+<!-- Deadline Management Modal -->
+<div class="modal fade" id="deadlineModal" tabindex="-1" aria-labelledby="deadlineModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deadlineModalLabel">Manage Grade Deadlines</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="">
+        <input type="hidden" name="action" value="update_deadlines">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="prelim_deadline" class="form-label">Prelim Grade Deadline</label>
+            <input type="date" class="form-control" id="prelim_deadline" name="prelim_deadline" value="<?php echo PRELIM_DEADLINE; ?>" required>
+          </div>
+          <div class="mb-3">
+            <label for="midterm_deadline" class="form-label">Midterm Grade Deadline</label>
+            <input type="date" class="form-control" id="midterm_deadline" name="midterm_deadline" value="<?php echo MIDTERM_DEADLINE; ?>" required>
+          </div>
+          <div class="mb-3">
+            <label for="final_deadline" class="form-label">Final Grade Deadline</label>
+            <input type="date" class="form-control" id="final_deadline" name="final_deadline" value="<?php echo FINAL_DEADLINE; ?>" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-success">Save Deadlines</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Edit Grade Modal -->
 <div class="modal fade" id="editGradeModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -520,16 +665,23 @@ function getCourseList($mysqli) {
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
+                        <label class="form-label">School Year</label>
+                        <input type="text" class="form-control" id="edit_school_year" readonly>
+                    </div>
+                    <div class="mb-3">
                         <label for="edit_prelim" class="form-label">Prelim Grade</label>
-                        <input type="number" step="0.01" class="form-control" id="edit_prelim" name="prelim" required>
+                        <input type="number" step="0.01" class="form-control" id="edit_prelim" name="prelim">
+                        <small class="text-danger" id="prelim_status"></small>
                     </div>
                     <div class="mb-3">
                         <label for="edit_midterm" class="form-label">Midterm Grade</label>
-                        <input type="number" step="0.01" class="form-control" id="edit_midterm" name="midterm" required>
+                        <input type="number" step="0.01" class="form-control" id="edit_midterm" name="midterm">
+                        <small class="text-danger" id="midterm_status"></small>
                     </div>
                     <div class="mb-3">
                         <label for="edit_final" class="form-label">Final Grade</label>
-                        <input type="number" step="0.01" class="form-control" id="edit_final" name="final" required>
+                        <input type="number" step="0.01" class="form-control" id="edit_final" name="final">
+                        <small class="text-danger" id="final_status"></small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Calculated GWA</label>
@@ -561,6 +713,7 @@ function getCourseList($mysqli) {
 
     // SQL Query to Fetch Grade Data with Student and Course Information
     $query = "SELECT g.GradesID, g.Prelim, g.Midterm, g.Final, g.GWA, g.EQ, g.Remarks,
+                     g.PrelimDate, g.MidtermDate, g.FinalDate, g.SchoolYear,
                      s.StudentID, s.StudentIDNumber, s.LName, s.FName,
                      c.CourseID, c.CourseIDnumber, c.CourseName,
                      f.FacultyID, f.LName as FacultyLName, f.FName as FacultyFName
@@ -570,40 +723,47 @@ function getCourseList($mysqli) {
               JOIN faculty f ON c.FacultyID = f.FacultyID
               ORDER BY s.LName, s.FName, c.CourseName";
 
-    if ($result = $mysqli->query($query)) {
-        if ($result->num_rows > 0) {
-            echo "<table id='gradesTable' class='display table table-striped' style='width:100%'>
-                    <thead>
-                      <tr>
-                        <th>Student</th>
-                        <th>Course</th>
-                        <th>Faculty</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>";
-            while ($row = $result->fetch_assoc()) {
-                echo "<tr>
-                        <td>" . htmlspecialchars($row['StudentIDNumber'] . " - " . $row['LName'] . ", " . $row['FName']) . "</td>
-                        <td>" . htmlspecialchars($row['CourseIDnumber'] . " - " . $row['CourseName']) . "</td>
-                        <td>" . htmlspecialchars($row['FacultyLName'] . " " . $row['FacultyFName']) . "</td>
-                        <td>
-                            <button class='btn btn-primary btn-sm' onclick='editGrade(" . $row['GradesID'] . ", " . $row['Prelim'] . ", " . $row['Midterm'] . ", " . $row['Final'] . ", " . $row['GWA'] . ", \"" . htmlspecialchars($row['EQ']) . "\", \"" . htmlspecialchars($row['Remarks']) . "\")'>Edit</button>
-                            <form method='POST' style='display: inline;'>
-                                <input type='hidden' name='action' value='delete'>
-                                <input type='hidden' name='grades_id' value='" . $row['GradesID'] . "'>
-                                <button type='submit' class='btn btn-danger btn-sm' onclick='return confirm(\"Are you sure you want to delete this grade?\")'>Delete</button>
-                            </form>
-                        </td>
-                      </tr>";
-            }
-            echo "</tbody></table>";
-        } else {
-            echo "No grade records found.";
+    $stmt = $mysqli->prepare($query);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $stmt->close();
+
+    if ($result->num_rows > 0) {
+        echo "<table id='gradesTable' class='display table table-striped' style='width:100%'>
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Course</th>
+                    <th>Faculty</th>
+                    <th>School Year</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>";
+        while ($row = $result->fetch_assoc()) {
+            echo "<tr>
+                    <td>" . htmlspecialchars($row['StudentIDNumber'] . " - " . $row['LName'] . ", " . $row['FName']) . "</td>
+                    <td>" . htmlspecialchars($row['CourseIDnumber'] . " - " . $row['CourseName']) . "</td>
+                    <td>" . htmlspecialchars($row['FacultyLName'] . " " . $row['FacultyFName']) . "</td>
+                    <td>" . htmlspecialchars($row['SchoolYear']) . "</td>
+                    <td>
+                        <button class='btn btn-primary btn-sm' onclick='editGrade(" . $row['GradesID'] . ", " . 
+                         $row['Prelim'] . ", " . $row['Midterm'] . ", " . $row['Final'] . ", " . 
+                         $row['GWA'] . ", \"" . htmlspecialchars($row['EQ']) . "\", \"" . 
+                         htmlspecialchars($row['Remarks']) . "\", \"" . $row['PrelimDate'] . "\", \"" . 
+                         $row['MidtermDate'] . "\", \"" . $row['FinalDate'] . "\", \"" . 
+                         htmlspecialchars($row['SchoolYear']) . "\")'>Edit</button>
+                        <form method='POST' style='display: inline;'>
+                            <input type='hidden' name='action' value='delete'>
+                            <input type='hidden' name='grades_id' value='" . $row['GradesID'] . "'>
+                            <button type='submit' class='btn btn-danger btn-sm' onclick='return confirm(\"Are you sure you want to delete this grade?\")'>Delete</button>
+                        </form>
+                    </td>
+                  </tr>";
         }
-        $result->free();
+        echo "</tbody></table>";
     } else {
-        echo "Error: " . $mysqli->error;
+        echo "No grade records found.";
     }
 
     $mysqli->close();
@@ -773,13 +933,33 @@ function getCourseList($mysqli) {
         document.getElementById('edit_remarks').value = remarks;
     }
 
-    function editGrade(gradesId, prelim, midterm, final, gwa, eq, remarks) {
+    function editGrade(gradesId, prelim, midterm, final, gwa, eq, remarks, prelimDate, midtermDate, finalDate, schoolYear) {
+        // Set the form values
         document.getElementById('edit-grades-id').value = gradesId;
         document.getElementById('edit_prelim').value = prelim;
         document.getElementById('edit_midterm').value = midterm;
         document.getElementById('edit_final').value = final;
+        document.getElementById('edit_school_year').value = schoolYear;
         
-        // Add event listeners to recalculate on input changes
+        // Get current date in Y-m-d format
+        const currentDate = new Date().toISOString().split('T')[0];
+        
+        // Set field states based on deadlines only
+        document.getElementById('edit_prelim').readOnly = currentDate > '<?php echo PRELIM_DEADLINE; ?>';
+        document.getElementById('edit_midterm').readOnly = currentDate > '<?php echo MIDTERM_DEADLINE; ?>';
+        document.getElementById('edit_final').readOnly = currentDate > '<?php echo FINAL_DEADLINE; ?>';
+        
+        // Set status messages based on deadlines only
+        document.getElementById('prelim_status').textContent = 
+            currentDate > '<?php echo PRELIM_DEADLINE; ?>' ? 'Prelim grade entry is closed' : '';
+            
+        document.getElementById('midterm_status').textContent = 
+            currentDate > '<?php echo MIDTERM_DEADLINE; ?>' ? 'Midterm grade entry is closed' : '';
+            
+        document.getElementById('final_status').textContent = 
+            currentDate > '<?php echo FINAL_DEADLINE; ?>' ? 'Final grade entry is closed' : '';
+        
+        // Add event listeners for grade calculations
         document.getElementById('edit_prelim').addEventListener('input', calculateGrades);
         document.getElementById('edit_midterm').addEventListener('input', calculateGrades);
         document.getElementById('edit_final').addEventListener('input', calculateGrades);
@@ -787,6 +967,7 @@ function getCourseList($mysqli) {
         // Calculate initial values
         calculateGrades();
         
+        // Show the modal
         var editModal = new bootstrap.Modal(document.getElementById('editGradeModal'));
         editModal.show();
     }
