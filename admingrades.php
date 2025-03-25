@@ -13,8 +13,8 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 }
 
 // Add deadline constants at the top of the file
-const PRELIM_DEADLINE = '2025-03-31';
-const MIDTERM_DEADLINE = '2025-04-12';
+const PRELIM_DEADLINE = '2025-02-12';
+const MIDTERM_DEADLINE = '2025-03-30';
 const FINAL_DEADLINE = '2025-06-10';
 
 // Function to check if a grade can be modified based on date
@@ -50,28 +50,39 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
     $midterm_deadline = $_POST['midterm_deadline'];
     $final_deadline = $_POST['final_deadline'];
     
-    // Update the deadline constants in the file
+    // Check if file is writable
+    if (!is_writable(__FILE__)) {
+        echo "<script>alert('Error: File is not writable. Please check file permissions.');</script>";
+        exit();
+    }
+    
+    // Read the current file content
     $file_content = file_get_contents(__FILE__);
     
-    // Replace the deadline constants with new values
+    // Create the new constant definitions with the actual values from the form
+    $new_prelim = "const PRELIM_DEADLINE = '$prelim_deadline';";
+    $new_midterm = "const MIDTERM_DEADLINE = '$midterm_deadline';";
+    $new_final = "const FINAL_DEADLINE = '$final_deadline';";
+    
+    // Replace the old constant definitions with new ones using a more flexible regex
     $file_content = preg_replace(
-        "/const PRELIM_DEADLINE = '.*?';/",
-        "const PRELIM_DEADLINE = '$prelim_deadline';",
+        "/const PRELIM_DEADLINE = '[0-9]{4}-[0-9]{2}-[0-9]{2}';/",
+        $new_prelim,
         $file_content
     );
     $file_content = preg_replace(
-        "/const MIDTERM_DEADLINE = '.*?';/",
-        "const MIDTERM_DEADLINE = '$midterm_deadline';",
+        "/const MIDTERM_DEADLINE = '[0-9]{4}-[0-9]{2}-[0-9]{2}';/",
+        $new_midterm,
         $file_content
     );
     $file_content = preg_replace(
-        "/const FINAL_DEADLINE = '.*?';/",
-        "const FINAL_DEADLINE = '$final_deadline';",
+        "/const FINAL_DEADLINE = '[0-9]{4}-[0-9]{2}-[0-9]{2}';/",
+        $new_final,
         $file_content
     );
     
     // Write the updated content back to the file
-    if (file_put_contents(__FILE__, $file_content)) {
+    if (file_put_contents(__FILE__, $file_content) !== false) {
         echo "<script>alert('Deadlines updated successfully!');</script>";
         echo "<script>window.location.href='admingrades.php';</script>";
     } else {
