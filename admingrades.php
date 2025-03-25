@@ -105,93 +105,81 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['a
 }
 
 // Edit grade logic
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit') {
-    $grades_id = $_POST['grades_id'];
-    $prelim = floatval($_POST['prelim']);
-    $midterm = floatval($_POST['midterm']);
-    $final = floatval($_POST['final']);
-    
-    // Calculate GWA
-    $gwa = $prelim * 0.3 + $midterm * 0.3 + $final * 0.4;
-    
-    // Adjust the semester grade based on the cutoff rule
-    if ($gwa < 71.50) {
-        $gwa = 70.00; // Dropped
-    } else if ($gwa < 74.50) {
-        $gwa = 74.00; // Failed
-    }
-
-    // Assign Grade Point Description (EQ)
-    if ($gwa >= 97.50) {
-        $eq = "1.00";
-    } else if ($gwa >= 94.50) {
-        $eq = "1.25";
-    } else if ($gwa >= 91.50) {
-        $eq = "1.50";
-    } else if ($gwa >= 88.50) {
-        $eq = "1.75";
-    } else if ($gwa >= 85.50) {
-        $eq = "2.00";
-    } else if ($gwa >= 82.50) {
-        $eq = "2.25";
-    } else if ($gwa >= 79.50) {
-        $eq = "2.50";
-    } else if ($gwa >= 76.50) {
-        $eq = "2.75";
-    } else if ($gwa >= 74.50) {
-        $eq = "3.00";
-    } else {
-        $eq = "5.00"; // Failed/Dropped
-    }
-
-    // Determine remarks based on GWA
-    if ($gwa < 71.50) {
-        $remarks = "Dropped";
-    } else if ($gwa < 74.50) {
-        $remarks = "Failed";
-    } else {
-        $remarks = "Passed";
-    }
-
-    // First, get the current values
-    $check_query = "SELECT Prelim, Midterm, Final, GWA, EQ, Remarks FROM grades WHERE GradesID = ?";
-    $check_stmt = $mysqli->prepare($check_query);
-    $check_stmt->bind_param("i", $grades_id);
-    $check_stmt->execute();
-    $check_result = $check_stmt->get_result();
-    $current_values = $check_result->fetch_assoc();
-    $check_stmt->close();
-
-    // Check if any values have changed
-    $has_changes = false;
-    if ($current_values['Prelim'] != $prelim ||
-        $current_values['Midterm'] != $midterm ||
-        $current_values['Final'] != $final ||
-        $current_values['GWA'] != $gwa ||
-        $current_values['EQ'] != $eq ||
-        $current_values['Remarks'] != $remarks) {
-        $has_changes = true;
-    }
-
-    if ($has_changes) {
-        // Update the grades
-        $update_query = "UPDATE grades SET Prelim = ?, Midterm = ?, Final = ?, GWA = ?, EQ = ?, Remarks = ? WHERE GradesID = ?";
-        $update_stmt = $mysqli->prepare($update_query);
-        $update_stmt->bind_param("ddddssi", $prelim, $midterm, $final, $gwa, $eq, $remarks, $grades_id);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit') {
+    if (isset($_POST['grades_id'])) {
+        $grades_id = intval($_POST['grades_id']);
+        $prelim = floatval($_POST['prelim']);
+        $midterm = floatval($_POST['midterm']);
+        $final = floatval($_POST['final']);
         
-        if ($update_stmt->execute()) {
-            echo "<script>
-                alert('Grade updated successfully!');
-                window.location.href = 'admingrades.php';
-            </script>";
+        // Calculate GWA
+        $gwa = $prelim * 0.3 + $midterm * 0.3 + $final * 0.4;
+        
+        // Apply cutoff rules
+        if ($gwa < 71.50) {
+            $gwa = 70.00;
+            $remarks = "Dropped";
+        } else if ($gwa < 74.50) {
+            $gwa = 74.00;
+            $remarks = "Failed";
         } else {
-            echo "<script>
-                alert('Error updating grade: " . $update_stmt->error . "');
-            </script>";
+            $remarks = "Passed";
         }
-        $update_stmt->close();
+        
+        // Calculate EQ
+        if ($gwa >= 97.50) $eq = "1.00";
+        else if ($gwa >= 94.50) $eq = "1.25";
+        else if ($gwa >= 91.50) $eq = "1.50";
+        else if ($gwa >= 88.50) $eq = "1.75";
+        else if ($gwa >= 85.50) $eq = "2.00";
+        else if ($gwa >= 82.50) $eq = "2.25";
+        else if ($gwa >= 79.50) $eq = "2.50";
+        else if ($gwa >= 76.50) $eq = "2.75";
+        else if ($gwa >= 74.50) $eq = "3.00";
+        else $eq = "5.00";
+
+        // Get current values
+        $check_query = "SELECT Prelim, Midterm, Final, GWA, EQ, Remarks FROM grades WHERE GradesID = ?";
+        $check_stmt = $mysqli->prepare($check_query);
+        $check_stmt->bind_param("i", $grades_id);
+        $check_stmt->execute();
+        $result = $check_stmt->get_result();
+        $current_values = $result->fetch_assoc();
+        $check_stmt->close();
+
+        // Check if there are actual changes
+        $has_changes = false;
+        if ($current_values['Prelim'] != $prelim ||
+            $current_values['Midterm'] != $midterm ||
+            $current_values['Final'] != $final ||
+            $current_values['GWA'] != $gwa ||
+            $current_values['EQ'] != $eq ||
+            $current_values['Remarks'] != $remarks) {
+            $has_changes = true;
+        }
+
+        if ($has_changes) {
+            // Update the grades
+            $update_query = "UPDATE grades SET Prelim = ?, Midterm = ?, Final = ?, GWA = ?, EQ = ?, Remarks = ? WHERE GradesID = ?";
+            $update_stmt = $mysqli->prepare($update_query);
+            $update_stmt->bind_param("ddddssi", $prelim, $midterm, $final, $gwa, $eq, $remarks, $grades_id);
+            
+            if ($update_stmt->execute()) {
+                echo "<script>
+                    alert('Grade updated successfully!');
+                    window.location.href = 'admingrades.php';
+                </script>";
+            } else {
+                echo "<script>
+                    alert('Error updating grade: " . $update_stmt->error . "');
+                </script>";
+            }
+            $update_stmt->close();
+        } else {
+            // No changes were made, just redirect without message
+            echo "<script>window.location.href = 'admingrades.php';</script>";
+        }
     }
-    // If no changes were made, don't show any message
 }
 
 // Delete grade logic
@@ -652,6 +640,27 @@ function getCourseList($mysqli) {
         document.getElementById('prelim').addEventListener('input', calculateAddGrades);
         document.getElementById('midterm').addEventListener('input', calculateAddGrades);
         document.getElementById('final').addEventListener('input', calculateAddGrades);
+
+        // Handle modal close events for edit modal
+        $('#editGradeModal').on('hide.bs.modal', function (e) {
+            // Check if the close was triggered by the form submission
+            if (e.target && $(e.target).find('form').data('submitted')) {
+                return;
+            }
+            // For any other close action, just redirect
+            window.location.href = 'admingrades.php';
+        });
+
+        // Mark the form as submitted when the submit button is clicked
+        $('#editGradeModal form').on('submit', function() {
+            $(this).data('submitted', true);
+        });
+
+        // Handle close button clicks
+        $('#editGradeModal .btn-close, #editGradeModal .btn-secondary').on('click', function(e) {
+            e.preventDefault();
+            window.location.href = 'admingrades.php';
+        });
     });
 
     function calculateAddGrades() {
