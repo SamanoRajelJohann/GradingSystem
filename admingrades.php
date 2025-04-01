@@ -14,7 +14,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
 
 // Add deadline constants at the top of the file
 const PRELIM_DEADLINE = '2025-02-12';
-const MIDTERM_DEADLINE = '2025-03-30';
+const MIDTERM_DEADLINE = '2025-04-12';
 const FINAL_DEADLINE = '2025-06-10';
 
 // Function to check if a grade can be modified based on date
